@@ -168,14 +168,25 @@ async function generateZIPArchive(studentNames) {
 // Helper: Calculate shared week data
 function calculateWeekStats(record, records) {
     const recordDate = new Date(record.date);
+    const todayStr = new Date().toLocaleDateString('en-CA'); // Results in YYYY-MM-DD
+    
+    // Calculate Monday for the selected record's week
     const startOfWeek = new Date(recordDate);
-    startOfWeek.setDate(recordDate.getDate() - recordDate.getDay() + 1);
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 4);
-
+    startOfWeek.setDate(recordDate.getDate() - recordDate.getDay() + (recordDate.getDay() === 0 ? -6 : 1));
+    
     const weekStartStr = startOfWeek.toISOString().split("T")[0];
-    const weekEndStr = endOfWeek.toISOString().split("T")[0];
+    
+    // Create an array of the 5 dates for that school week (Mon-Fri)
+    const weekDates = [];
+    for (let i = 0; i < 5; i++) {
+        const d = new Date(startOfWeek);
+        d.setDate(startOfWeek.getDate() + i);
+        weekDates.push(d.toISOString().split("T")[0]);
+    }
 
+    const weekEndStr = weekDates[4];
+
+    // Filter attendance records for this specific week
     const weeklyAttendanceRecords = records.filter(r => {
         return r.classId === record.classId && 
                r.date >= weekStartStr && 
@@ -183,11 +194,26 @@ function calculateWeekStats(record, records) {
                !r.isPublicHoliday;
     });
 
+    // MODIFICATION START:
+    // 1. Find which of the 5 school days have actually occurred yet (up to today)
+    const schoolDaysPassedSoFar = weekDates.filter(date => date <= todayStr);
+
+    // 2. Count holidays that happened ONLY within those passed days
+    const holidaysPassed = records.filter(r => {
+        return r.date >= weekStartStr && 
+               r.date <= todayStr && // Only count holidays up to today
+               r.isPublicHoliday;
+    });
+
+    // 3. Subtract holidays from the days that have actually passed
+    const totalSchoolDays = schoolDaysPassedSoFar.length - holidaysPassed.length;
+    // MODIFICATION END
+
     return { 
         weekStartStr, 
         weekEndStr, 
         weeklyAttendanceRecords, 
-        totalSchoolDays: weeklyAttendanceRecords.length 
+        totalSchoolDays: totalSchoolDays > 0 ? totalSchoolDays : 0 
     };
 }
 
@@ -196,38 +222,79 @@ function createPDFDoc(jsPDF, studentName, className, stats, logoUrl) {
     const doc = new jsPDF();
     const centerX = 105;
     let presentCount = 0;
-    let leftEarlyDetails = [];
 
+    // Calculate presence based on weekly records
     stats.weeklyAttendanceRecords.forEach(r => {
         const s = r.students.find(st => st.name === studentName);
-        if (s) {
-            if (s.present) presentCount++;
-            if (s.leftEarly) leftEarlyDetails.push(`${r.date} - ${s.reason}`);
-        }
+        if (s && s.present) presentCount++;
     });
 
+    const absentCount = stats.totalSchoolDays - presentCount;
     const percentage = stats.totalSchoolDays === 0 ? 0 : ((presentCount / stats.totalSchoolDays) * 100).toFixed(1);
+    
+    // Set dynamic color based on performance
     let color = percentage < 80 ? [255, 0, 0] : (percentage < 90 ? [255, 165, 0] : [0, 128, 0]);
 
+    // Draw Outer Border
     doc.setLineWidth(0.5);
     doc.rect(10, 10, 190, 277);
+
+    // Header: Logo and Title
     try { doc.addImage(logoUrl, 'PNG', centerX - 15, 15, 30, 30); } catch (e) {}
 
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
     doc.text("WEEKLY ATTENDANCE REPORT", centerX, 55, { align: "center" });
     doc.line(30, 60, 180, 60);
 
+    // Student Info
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(15);
+    doc.text(`${studentName}`, centerX, 75, { align: "center" });
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.text(`Student: ${studentName}`, centerX, 75, { align: "center" });
-    doc.text(`Class: ${className}`, centerX, 83, { align: "center" });
-    doc.text(`Week: ${stats.weekStartStr} to ${stats.weekEndStr}`, centerX, 91, { align: "center" });
+    doc.text(`from ${className}`, centerX, 83, { align: "center" });
+    const startFormatted = formatReportDate(stats.weekStartStr);
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const effectiveEndStr = stats.weekEndStr > todayStr ? todayStr : stats.weekEndStr;
+    const endFormatted = formatReportDate(effectiveEndStr);
+    const year = getYear(stats.weekEndStr);
 
+    doc.setFont("helvetica", "bold");
+    doc.text(`${startFormatted} — ${endFormatted} ${year}`, centerX, 91, { align: "center" });
+    doc.line(60, 96, 150, 96);
+
+    // Attendance Breakdown
+    doc.setFontSize(14);
+    doc.text(`Days Present: ${presentCount} / ${stats.totalSchoolDays}`, centerX, 115, { align: "center" });
+    doc.text(`Days Absent: ${absentCount}`, centerX, 125, { align: "center" });
+
+    // Percentage Indicator
     doc.setTextColor(...color);
-    doc.setFontSize(22);
-    doc.text(`${percentage}%`, centerX, 140, { align: "center" });
-    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(24);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${percentage}%`, centerX, 150, { align: "center" });
+    
+    doc.setFontSize(10);
+    doc.text("Attendance Percentage", centerX, 158, { align: "center" });
+
+    // Footer Disclaimer
+    doc.setTextColor(150, 150, 150);
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.text("This is an electronically generated report, hence does not require signature.", centerX, 280, { align: "center" });
     
     return doc;
+}
+
+function formatReportDate(dateStr) {
+    const options = { day: 'numeric', month: 'short' };
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-GB', options); // Result: "16 Feb"
+}
+
+function getYear(dateStr) {
+    return new Date(dateStr).getFullYear(); // Result: "2026"
 }
 
 function togglePublicHoliday(id){
@@ -323,7 +390,7 @@ loadTheme();
 
         <br>
 
-        <button onclick="generateSelectedReports()" style="background: #28a745; color: white;">Bulk Download Selected</button>
+        <button onclick="generateSelectedReports()" style="background: #28a745; color: white;">Download Selected</button>
         <button onclick="generateAllReports()" style="background: #007bff; color: white;">Bulk Download All</button>
         <button onclick="closeModal()">Cancel</button>
     </div>
