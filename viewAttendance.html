@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="stylesheet" href="mystyle.css">
+<title>View Attendance</title>
+</head>
+
+<body>
+
+<header>
+    <h1>Attendance Records</h1>
+    <button onclick="toggleDarkMode()" id="themeToggle">🌙</button>
+</header>
+
+<section>
+
+<input type="text" id="searchAttendance" placeholder="Search by date..."
+oninput="renderAttendanceList()">
+
+<br><br>
+<label style="margin-left: 10px;">
+    <input type="checkbox" id="hideHolidaysToggle" onchange="renderAttendanceList()" checked> 
+    Show Public Holidays
+</label>
+<table id="attendanceTable">
+<tr>
+    <th>Date</th>
+    <th>Class</th>
+    <th>Present</th>
+    <th>Actions</th>
+</tr>
+</table>
+
+<br>
+
+<button onclick="clearAttendanceData()" style="background:red;color:white;">
+    Clear All Attendance Data
+</button>
+
+<button onclick="goHome()">Back to Home</button>
+
+</section>
+
+<script>
+
+function renderAttendanceList() {
+    const records = JSON.parse(localStorage.getItem("attendance")) || [];
+    const search = document.getElementById("searchAttendance").value.toLowerCase();
+    const showHolidays = document.getElementById("hideHolidaysToggle").checked; //
+    const table = document.getElementById("attendanceTable");
+
+    table.innerHTML = `
+        <tr>
+            <th>Date</th>
+            <th>Class</th>
+            <th>Present</th>
+            <th>Actions</th>
+        </tr>
+    `;
+
+    records
+    .filter(r => r.date.includes(search))
+    .filter(r => showHolidays || !r.isPublicHoliday) // Filter logic
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .forEach(record => {
+        const row = table.insertRow();
+        if (record.isPublicHoliday) {
+            row.style.backgroundColor = "rgba(0, 123, 255, 0.1)";
+            row.innerHTML = `
+                <td><strong>${record.date}</strong></td>
+                <td style="color: #007bff; font-weight: bold;">🎉 PUBLIC HOLIDAY</td>
+                <td>—</td>
+                <td><button onclick="deleteAttendance('${record.id}')" style="background:#dc3545; color:white;">Delete Holiday</button></td>
+            `;
+        } else {
+            const presentCount = record.students.filter(s => s.present).length;
+            row.innerHTML = `
+                <td>${record.date}</td>
+                <td>${record.className}</td>
+                <td>${presentCount}/${record.students.length}</td>
+                <td>
+                    <button onclick="editAttendance('${record.id}')">Edit</button>
+                    <button onclick="openParentReportModal('${record.id}')">Parent Weekly Report</button>
+                    <button onclick="deleteAttendance('${record.id}')">Delete</button>
+                </td>
+            `;
+        }
+    });
+}
+
+function editAttendance(id){
+    window.location.href = `attendance.html?id=${id}`;
+}
+
+function openReport(id){
+    window.location.href = `attendanceReport.html?id=${id}`;
+}
+
+function deleteAttendance(id) {
+    if (!confirm("Delete this record?")) return;
+
+    let records = JSON.parse(localStorage.getItem("attendance")) || [];
+    const recordToDelete = records.find(r => r.id === id);
+    
+    // If it's a holiday, remove it from the publicHolidays list too
+    if (recordToDelete && recordToDelete.isPublicHoliday) {
+        let holidays = JSON.parse(localStorage.getItem("publicHolidays")) || [];
+        holidays = holidays.filter(h => h !== recordToDelete.date);
+        localStorage.setItem("publicHolidays", JSON.stringify(holidays));
+    }
+
+    records = records.filter(r => r.id !== id);
+    localStorage.setItem("attendance", JSON.stringify(records));
+    renderAttendanceList();
+}
+
+function clearAttendanceData(){
+    if(!confirm("This will delete ALL attendance records. Continue?")) return;
+    localStorage.removeItem("attendance");
+    renderAttendanceList();
+}
+
+// Function for Individual PDF Downloads
+async function generateIndividualPDFs(studentNames) {
+    const { jsPDF } = window.jspdf;
+    const records = JSON.parse(localStorage.getItem("attendance")) || [];
+    const record = selectedAttendanceRecord;
+    const logoUrl = 'logo.png'; //
+
+    const stats = calculateWeekStats(record, records);
+
+    for (const studentName of studentNames) {
+        const doc = createPDFDoc(jsPDF, studentName, record.className, stats, logoUrl);
+        doc.save(`Weekly_Report_${studentName}.pdf`);
+        // Small delay to prevent browser blocking multiple downloads
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    closeModal();
+}
+
+// Function for Single ZIP Download
+async function generateZIPArchive(studentNames) {
+    const { jsPDF } = window.jspdf;
+    const zip = new JSZip(); //
+    const records = JSON.parse(localStorage.getItem("attendance")) || [];
+    const record = selectedAttendanceRecord;
+    const logoUrl = 'logo.png'; //
+
+    const stats = calculateWeekStats(record, records);
+
+    for (const studentName of studentNames) {
+        const doc = createPDFDoc(jsPDF, studentName, record.className, stats, logoUrl);
+        const pdfOutput = doc.output("arraybuffer");
+        zip.file(`Weekly_Report_${studentName}.pdf`, pdfOutput);
+    }
+
+    zip.generateAsync({ type: "blob" }).then(function(content) {
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(content);
+        link.download = `Attendance_Reports_${stats.weekStartStr}.zip`;
+        link.click();
+    });
+    closeModal();
+}
+
+// Helper: Calculate shared week data
+function calculateWeekStats(record, records) {
+    const recordDate = new Date(record.date);
+    const startOfWeek = new Date(recordDate);
+    startOfWeek.setDate(recordDate.getDate() - recordDate.getDay() + 1);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 4);
+
+    const weekStartStr = startOfWeek.toISOString().split("T")[0];
+    const weekEndStr = endOfWeek.toISOString().split("T")[0];
+
+    const weeklyAttendanceRecords = records.filter(r => {
+        return r.classId === record.classId && 
+               r.date >= weekStartStr && 
+               r.date <= weekEndStr && 
+               !r.isPublicHoliday;
+    });
+
+    return { 
+        weekStartStr, 
+        weekEndStr, 
+        weeklyAttendanceRecords, 
+        totalSchoolDays: weeklyAttendanceRecords.length 
+    };
+}
+
+// Helper: Shared PDF Layout Logic
+function createPDFDoc(jsPDF, studentName, className, stats, logoUrl) {
+    const doc = new jsPDF();
+    const centerX = 105;
+    let presentCount = 0;
+    let leftEarlyDetails = [];
+
+    stats.weeklyAttendanceRecords.forEach(r => {
+        const s = r.students.find(st => st.name === studentName);
+        if (s) {
+            if (s.present) presentCount++;
+            if (s.leftEarly) leftEarlyDetails.push(`${r.date} - ${s.reason}`);
+        }
+    });
+
+    const percentage = stats.totalSchoolDays === 0 ? 0 : ((presentCount / stats.totalSchoolDays) * 100).toFixed(1);
+    let color = percentage < 80 ? [255, 0, 0] : (percentage < 90 ? [255, 165, 0] : [0, 128, 0]);
+
+    doc.setLineWidth(0.5);
+    doc.rect(10, 10, 190, 277);
+    try { doc.addImage(logoUrl, 'PNG', centerX - 15, 15, 30, 30); } catch (e) {}
+
+    doc.setFontSize(18);
+    doc.text("WEEKLY ATTENDANCE REPORT", centerX, 55, { align: "center" });
+    doc.line(30, 60, 180, 60);
+
+    doc.setFontSize(12);
+    doc.text(`Student: ${studentName}`, centerX, 75, { align: "center" });
+    doc.text(`Class: ${className}`, centerX, 83, { align: "center" });
+    doc.text(`Week: ${stats.weekStartStr} to ${stats.weekEndStr}`, centerX, 91, { align: "center" });
+
+    doc.setTextColor(...color);
+    doc.setFontSize(22);
+    doc.text(`${percentage}%`, centerX, 140, { align: "center" });
+    doc.setTextColor(0, 0, 0);
+    
+    return doc;
+}
+
+function togglePublicHoliday(id){
+
+    let records = JSON.parse(localStorage.getItem("attendance")) || [];
+    const record = records.find(r => r.id === id);
+
+    if(!record) return;
+
+    record.publicHoliday = !record.publicHoliday;
+
+    localStorage.setItem("attendance", JSON.stringify(records));
+
+    alert(record.publicHoliday ?
+        "Marked as Public Holiday." :
+        "Removed Public Holiday status."
+    );
+
+    renderAttendanceList();
+}
+
+function generateSelectedReports() {
+    const checkboxes = document.querySelectorAll('#studentCheckboxList input:checked');
+    const selected = Array.from(checkboxes).map(cb => cb.value);
+    
+    if (selected.length === 0) {
+        alert("Please select at least one student.");
+        return;
+    }
+    // Reverted to individual downloads
+    generateIndividualPDFs(selected); 
+}
+
+function openParentReportModal(id) {
+    const records = JSON.parse(localStorage.getItem("attendance")) || [];
+    selectedAttendanceRecord = records.find(r => r.id === id);
+
+    if (!selectedAttendanceRecord) {
+        alert("Record not found.");
+        return;
+    }
+
+    const container = document.getElementById("studentCheckboxList");
+    container.innerHTML = "";
+
+    selectedAttendanceRecord.students.forEach(student => {
+        container.innerHTML += `
+            <div class="checkbox-item">
+                <input type="checkbox" id="chk_${student.name}" value="${student.name}" checked>
+                <label for="chk_${student.name}">${student.name}</label>
+            </div>
+        `;
+    });
+
+    document.getElementById("parentReportModal").style.display = "flex"; // Changed to flex for centering
+}
+
+function closeModal() {
+    document.getElementById("parentReportModal").style.display = "none";
+}
+
+function goHome() {
+    window.location.href = "index.html";
+}
+
+function toggleDarkMode() {
+    const body = document.body;
+    if (body.classList.contains("dark")) {
+        body.classList.remove("dark");
+        body.classList.add("light");
+        localStorage.setItem("theme", "light");
+    } else {
+        body.classList.remove("light");
+        body.classList.add("dark");
+        localStorage.setItem("theme", "dark");
+    }
+}
+
+function loadTheme() {
+    const theme = localStorage.getItem("theme") || "light";
+    document.body.classList.add(theme);
+}
+
+renderAttendanceList();
+loadTheme();
+</script>
+
+<div id="parentReportModal" class="modal">
+    <div class="modal-content">
+        <h3>Select Students for Parent Report</h3>
+
+        <div id="studentCheckboxList"></div>
+
+        <br>
+
+        <button onclick="generateSelectedReports()" style="background: #28a745; color: white;">Bulk Download Selected</button>
+        <button onclick="generateAllReports()" style="background: #007bff; color: white;">Bulk Download All</button>
+        <button onclick="closeModal()">Cancel</button>
+    </div>
+</div>
+
+</body>
+</html>

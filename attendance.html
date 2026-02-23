@@ -1,0 +1,107 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<link rel="stylesheet" href="mystyle.css">
+<title>Attendance</title>
+</head>
+
+<body>
+
+<header>
+    <h1>Attendance</h1>
+    <button onclick="toggleDarkMode()" id="themeToggle">🌙</button>
+</header>
+
+<section>
+    <h3 id="attendanceTitle"></h3>
+
+    <table id="attendanceTable">
+        <tr>
+            <th>Student</th>
+            <th>Present</th>
+            <th>Left Early</th>
+            <th>Reason</th>
+        </tr>
+    </table>
+
+    <br>
+    <button onclick="saveAttendance()">Save</button>
+    <button onclick="goBack()">Back</button>
+</section>
+
+<script>
+
+const id = new URLSearchParams(window.location.search).get("id");
+const records = JSON.parse(localStorage.getItem("attendance")) || [];
+const record = records.find(r => r.id === id);
+
+if (!record) {
+    alert("Attendance not found.");
+    window.location.href = "index.html";
+}
+
+document.getElementById("attendanceTitle").innerText =
+`${record.className} - ${record.date}`;
+
+const table = document.getElementById("attendanceTable");
+
+record.students.forEach((student, index) => {
+
+    const row = table.insertRow();
+
+    row.innerHTML = `
+        <td>${student.name}</td>
+
+        <td>
+            <input type="checkbox"
+                ${student.present ? "checked" : ""}
+                onchange="record.students[${index}].present = this.checked">
+        </td>
+
+        <td>
+            <input type="checkbox"
+                ${student.leftEarly ? "checked" : ""}
+                onchange="record.students[${index}].leftEarly = this.checked">
+        </td>
+
+        <td>
+            <input type="text"
+                value="${student.reason}"
+                onchange="record.students[${index}].reason = this.value">
+        </td>
+    `;
+});
+
+function saveAttendance() {
+    localStorage.setItem("attendance", JSON.stringify(records));
+    alert("Attendance saved.");
+}
+
+function goBack() {
+    window.location.href = "index.html";
+}
+
+function toggleDarkMode() {
+    const body = document.body;
+    if (body.classList.contains("dark")) {
+        body.classList.remove("dark");
+        body.classList.add("light");
+        localStorage.setItem("theme", "light");
+    } else {
+        body.classList.remove("light");
+        body.classList.add("dark");
+        localStorage.setItem("theme", "dark");
+    }
+}
+
+function loadTheme() {
+    const theme = localStorage.getItem("theme") || "light";
+    document.body.classList.add(theme);
+}
+
+loadTheme();
+
+</script>
+
+</body>
+</html>
