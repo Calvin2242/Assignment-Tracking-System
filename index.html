@@ -3,7 +3,7 @@
 <head>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="mystyle.css">
-    <title>Assignment Tracking System V2</title>
+    <title>Assignment Tracking System V2.1</title>
 </head>
 <body>
 
@@ -12,7 +12,7 @@
         <img src="logo.png" alt="School Logo" class="school-logo">
     </div>
 
-    <h1>Assignment Tracking System V2</h1>
+    <h1>Assignment Tracking System V2.1</h1>
 
     <button onclick="toggleDarkMode()" id="themeToggle">
         🌙
@@ -337,7 +337,7 @@ function loadTheme() {
 }
 
 function setTodayDate() {
-    const today = new Date().toISOString().split("T")[0];
+    const today = new Date().toLocaleDateString('en-CA');
     document.getElementById("date").value = today;
 }
 
@@ -349,3 +349,4 @@ renderHeadClassUI();
 
 </body>
 </html>
+
