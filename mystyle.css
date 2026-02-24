@@ -157,16 +157,18 @@ body.dark td { border-bottom: 1px solid #3a3a3c; }
    MODALS
 ========================= */
 .modal {
-    display: none; 
+    display: none;
     position: fixed;
     z-index: 999;
-    left: 0; 
-    top: 0;
-    width: 100%; 
-    height: 100%;
+    inset: 0; /* cleaner than top/left/width/height */
     background: rgba(0,0,0,0.6);
-    justify-content: center; 
-    align-items: center;     
+
+    display: flex;
+    justify-content: center;
+    align-items: flex-start; /* prevent vertical lock */
+    
+    overflow-y: auto;        /* allow scrolling */
+    padding: 40px 20px;      /* breathing room */
 }
 
 .modal-content {
@@ -176,6 +178,9 @@ body.dark td { border-bottom: 1px solid #3a3a3c; }
     max-width: 450px;
     border-radius: 24px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+
+    max-height: 90vh;        /* prevent overflow */
+    overflow-y: auto;        /* scroll inside modal */
 }
 
 body.dark .modal-content {
