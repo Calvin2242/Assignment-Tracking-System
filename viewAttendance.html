@@ -328,6 +328,18 @@ function generateSelectedReports() {
     generateIndividualPDFs(selected); 
 }
 
+function generateAllReports() {
+    const checkboxes = document.querySelectorAll('#studentCheckboxList input');
+    const allStudents = Array.from(checkboxes).map(cb => cb.value);
+    
+    if (allStudents.length === 0) {
+        alert("No students available.");
+        return;
+    }
+    
+    generateZIPArchive(allStudents);
+}
+
 function openParentReportModal(id) {
     const records = JSON.parse(localStorage.getItem("attendance")) || [];
     selectedAttendanceRecord = records.find(r => r.id === id);

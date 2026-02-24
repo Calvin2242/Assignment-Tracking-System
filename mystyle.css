@@ -162,13 +162,15 @@ body.dark td { border-bottom: 1px solid #3a3a3c; }
     z-index: 999;
     inset: 0; /* cleaner than top/left/width/height */
     background: rgba(0,0,0,0.6);
-
-    display: flex;
     justify-content: center;
     align-items: flex-start; /* prevent vertical lock */
     
     overflow-y: auto;        /* allow scrolling */
     padding: 40px 20px;      /* breathing room */
+}
+
+.modal[style*="display: flex"] {
+    display: flex !important;
 }
 
 .modal-content {
